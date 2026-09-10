@@ -1,6 +1,6 @@
 {
   "name": "sourcecheck",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Check that every claim an LLM makes points at a real passage in your sources. Locates quotes exactly, after normalization, or fuzzily with offsets; grades claims supported, partial or unsupported; verifies extracted fields against their evidence; optional model judge; citation prompts and parsers; Markdown reports; zero dependencies.",
   "keywords": [
     "citations",
