@@ -70,41 +70,41 @@ function toCitation(raw: RawCitation, labels: Map<string, string>): Citation {
   return c;
 }
 
-/** Reads claims from a model reply written under `citationInstructions`, JSON or inline. */
-export function parseClaims(reply: string, sources: Source[]): Claim[] {
-  const labels = labelMap(sources);
-  const body = reply.replace(/^\s*```[a-z]*\s*|\s*```\s*$/g, '').trim();
-  if (!body) return [];
-  if (body.startsWith('{') || body.startsWith('[')) {
-    try {
-      const parsed: unknown = JSON.parse(body);
-      const list = Array.isArray(parsed) ? parsed : (parsed as { claims?: unknown }).claims;
-      if (Array.isArray(list)) {
-        return list
-          .filter((c): c is { text: unknown; citations?: unknown; id?: unknown } => !!c && typeof c === 'object' && 'text' in c)
-          .map((c) => {
-            const claim: Claim = {
-              text: String(c.text).trim(),
-              citations: (Array.isArray(c.citations) ? (c.citations as RawCitation[]) : []).map((r) => toCitation(r, labels)),
-            };
-            if (typeof c.id === 'string') claim.id = c.id;
-            return claim;
-          })
-          .filter((c) => c.text);
-      }
-    } catch {
-      // fall through to inline parsing
-    }
+/** Claims from the JSON reply shape (an array, or `{ claims: [...] }`); null when the body is not that shape. */
+function parseJsonClaims(body: string, labels: Map<string, string>): Claim[] | null {
+  if (!body.startsWith('{') && !body.startsWith('[')) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    return null;
   }
+  const list = Array.isArray(parsed) ? parsed : (parsed as { claims?: unknown }).claims;
+  if (!Array.isArray(list)) return null;
+  return list
+    .filter((entry): entry is { text: unknown; citations?: unknown; id?: unknown } => !!entry && typeof entry === 'object' && 'text' in entry)
+    .map((entry) => {
+      const claim: Claim = {
+        text: String(entry.text).trim(),
+        citations: (Array.isArray(entry.citations) ? (entry.citations as RawCitation[]) : []).map((raw) => toCitation(raw, labels)),
+      };
+      if (typeof entry.id === 'string') claim.id = entry.id;
+      return claim;
+    })
+    .filter((claim) => claim.text);
+}
+
+/** Claims from prose with inline `[S1: "quote"]` / `[uncited]` markers, one claim per sentence. */
+function parseInlineClaims(body: string, labels: Map<string, string>): Claim[] {
   const claims: Claim[] = [];
   for (const sentence of splitSentences(body)) {
     const citations: Citation[] = [];
     const text = sentence
-      .replace(MARKER, (_m, ref: string, quote: string | undefined) => {
+      .replace(MARKER, (_marker, ref: string, quote: string | undefined) => {
         if (ref.toLowerCase() !== 'uncited') {
-          const c: Citation = { sourceId: labels.get(ref.trim()) ?? ref.trim() };
-          if (quote) c.quote = quote.replace(/\\"/g, '"');
-          citations.push(c);
+          const citation: Citation = { sourceId: labels.get(ref.trim()) ?? ref.trim() };
+          if (quote) citation.quote = quote.replace(/\\"/g, '"');
+          citations.push(citation);
         }
         return '';
       })
@@ -114,6 +114,14 @@ export function parseClaims(reply: string, sources: Source[]): Claim[] {
     if (text) claims.push({ text, citations });
   }
   return claims;
+}
+
+/** Reads claims from a model reply written under `citationInstructions`, JSON or inline. */
+export function parseClaims(reply: string, sources: Source[]): Claim[] {
+  const labels = labelMap(sources);
+  const body = reply.replace(/^\s*```[a-z]*\s*|\s*```\s*$/g, '').trim();
+  if (!body) return [];
+  return parseJsonClaims(body, labels) ?? parseInlineClaims(body, labels);
 }
 
 /** Claims as Markdown with footnotes for their citations. */
