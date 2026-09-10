@@ -52,13 +52,14 @@ describe('parseClaims', () => {
   });
 
   it('falls back to a regex sentence splitter when Intl.Segmenter is unavailable', () => {
-    const original = Intl.Segmenter;
-    // @ts-expect-error removing for the test
-    Intl.Segmenter = undefined;
+    // The lib types declare Intl.Segmenter read-only; the runtime property is writable.
+    const intl = Intl as unknown as { Segmenter?: typeof Intl.Segmenter };
+    const original = intl.Segmenter;
+    intl.Segmenter = undefined;
     try {
-      expect(parseClaims('One [S1: "a"]. Two [uncited]!', sources).map((c) => c.text)).toEqual(['One.', 'Two!']);
+      expect(parseClaims('One [S1: "a"]. Two [uncited]!', sources).map((claim) => claim.text)).toEqual(['One.', 'Two!']);
     } finally {
-      Intl.Segmenter = original;
+      intl.Segmenter = original;
     }
   });
 });
